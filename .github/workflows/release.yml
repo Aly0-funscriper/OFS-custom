@@ -1,0 +1,54 @@
+name: Release
+
+# 在 Actions 页面手动运行，或推送 v* 标签时自动构建 Windows 安装包并发布到 Release
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release 标签名'
+        required: true
+        default: 'v13.0'
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure CMake
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build OFS
+        run: cmake --build build --config Release --target OpenFunscripter
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          choco install -y -r --no-progress innosetup
+          iscc ofs-installer.iss
+          Move-Item "installer\ofs-installer.exe" "OFS-strict-${{ steps.tag.outputs.tag }}-setup.exe"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: OFS strict ${{ steps.tag.outputs.tag }}
+          body_path: OFS-Strict-v13-Features.md
+          files: OFS-strict-${{ steps.tag.outputs.tag }}-setup.exe
